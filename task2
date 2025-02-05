@@ -1,0 +1,98 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
+#include <ctype.h>
+
+#define MAX_WORD_LEN 50
+#define MAX_WORDS 10000
+#define NUM_THREADS 4
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+typedef struct {
+    char word[MAX_WORD_LEN];
+    int count;
+} WordCount;
+
+typedef struct {
+    char *buffer;
+    int start;
+    int end;
+} ThreadData;
+
+WordCount global_counts[MAX_WORDS];
+int global_size = 0;
+
+void add_word(WordCount *word_list, int *size, char *word) {
+    pthread_mutex_lock(&mutex);
+    for (int i = 0; i < *size; i++) {
+        if (strcmp(word_list[i].word, word) == 0) {
+            word_list[i].count++;
+            pthread_mutex_unlock(&mutex);
+            return;
+        }
+    }
+    strcpy(word_list[*size].word, word);
+    word_list[*size].count = 1;
+    (*size)++;
+    pthread_mutex_unlock(&mutex);
+}
+
+void *count_words(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
+    char word[MAX_WORD_LEN];
+    int word_idx = 0;
+    
+    for (int i = data->start; i < data->end; i++) {
+        char c = data->buffer[i];
+        if (isalpha(c)) {
+            word[word_idx++] = tolower(c);
+        } else if (word_idx > 0) {
+            word[word_idx] = '\0';
+            add_word(global_counts, &global_size, word);
+            word_idx = 0;
+        }
+    }
+    return NULL;
+}
+
+int main() {
+    FILE *file = fopen("words.txt", "r");
+    if (!file) {
+        perror("Error opening file");
+        return 1;
+    }
+    
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    rewind(file);
+    char *buffer = malloc(file_size + 1);
+    fread(buffer, 1, file_size, file);
+    fclose(file);
+    buffer[file_size] = '\0';
+    
+    pthread_t threads[NUM_THREADS];
+    ThreadData thread_data[NUM_THREADS];
+    
+    int segment_size = file_size / NUM_THREADS;
+    
+    for (int i = 0; i < NUM_THREADS; i++) {
+        thread_data[i].buffer = buffer;
+        thread_data[i].start = i * segment_size;
+        thread_data[i].end = (i == NUM_THREADS - 1) ? file_size : (i + 1) * segment_size;
+        pthread_create(&threads[i], NULL, count_words, &thread_data[i]);
+    }
+    
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    
+    for (int i = 0; i < global_size; i++) {
+        printf("%s: %d\n", global_counts[i].word, global_counts[i].count);
+    }
+    
+    free(buffer);
+    pthread_mutex_destroy(&mutex);
+    return 0;
+}
