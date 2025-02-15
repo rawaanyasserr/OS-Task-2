@@ -1,0 +1,106 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+#define MAX_PROCESSES 10
+#define MAX_RESOURCES 10
+
+int P, R; 
+int E[MAX_RESOURCES]; 
+int A[MAX_RESOURCES]; 
+int C[MAX_PROCESSES][MAX_RESOURCES]; 
+int Rq[MAX_PROCESSES][MAX_RESOURCES]; 
+int Finished[MAX_PROCESSES]; 
+
+void read_input() {
+    FILE *file = fopen("input.txt", "r"); 
+    if (!file) {
+        perror("File open error");
+        exit(1);
+    }
+
+    fscanf(file, "%d %d", &P, &R); 
+
+    
+    for (int i = 0; i < R; i++) 
+        fscanf(file, "%d", &E[i]);
+
+    
+    for (int i = 0; i < P; i++)
+        for (int j = 0; j < R; j++)
+            fscanf(file, "%d", &C[i][j]);
+
+    
+    for (int i = 0; i < P; i++)
+        for (int j = 0; j < R; j++)
+            fscanf(file, "%d", &Rq[i][j]);
+
+    fclose(file);
+}
+
+void calculate_available_resources() {
+    for (int j = 0; j < R; j++) {
+        A[j] = E[j];
+        for (int i = 0; i < P; i++) {
+            A[j] -= C[i][j];
+        }
+    }
+}
+
+int is_deadlocked() {
+    int deadlocked = 0;
+    int found;
+
+    for (int i = 0; i < P; i++) 
+        Finished[i] = 0;
+
+    while (1) {
+        found = 0;
+        for (int i = 0; i < P; i++) {
+            if (!Finished[i]) { 
+                int can_execute = 1;
+                for (int j = 0; j < R; j++) {
+                    if (Rq[i][j] > A[j]) { 
+                        can_execute = 0;
+                        break;
+                    }
+                }
+                if (can_execute) {
+                    for (int j = 0; j < R; j++)
+                        A[j] += C[i][j];
+                    Finished[i] = 1;
+                    found = 1;
+                }
+            }
+        }
+        if (!found) break;
+    }
+
+    for (int i = 0; i < P; i++) {
+        if (!Finished[i]) {
+            deadlocked = 1;
+            break;
+        }
+    }
+    return deadlocked;
+}
+
+void print_deadlocked_processes() {
+    printf("Deadlock detected! The following processes are stuck: ");
+    for (int i = 0; i < P; i++) {
+        if (!Finished[i])
+            printf("P%d ", i);
+    }
+    printf("\n");
+}
+
+int main() {
+    read_input();
+    calculate_available_resources();
+
+    if (is_deadlocked())
+        print_deadlocked_processes();
+    else
+        printf("No deadlock detected. System is in a safe state.\n");
+
+    return 0;
+}
