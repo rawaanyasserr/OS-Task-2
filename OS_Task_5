@@ -1,0 +1,104 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <errno.h>
+
+#define MAX_PATH 1024
+
+void traverse_directory(const char *dir_path, int *file_sizes, int *file_count, int bin_width) {
+    DIR *dir;
+    struct dirent *entry;
+    struct stat statbuf;
+
+    if ((dir = opendir(dir_path)) == NULL) {
+        perror("opendir");
+        return;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char path[MAX_PATH];
+        snprintf(path, MAX_PATH, "%s/%s", dir_path, entry->d_name);
+
+        if (lstat(path, &statbuf) == -1) {
+            fprintf(stderr, "Warning: Cannot access %s (%s)\n", path, strerror(errno));
+            continue;
+        }
+
+
+        if (S_ISLNK(statbuf.st_mode)) {
+            continue;
+        }
+
+        if (stat(path, &statbuf) == -1) {
+            fprintf(stderr, "Warning: Cannot access %s (%s)\n", path, strerror(errno));
+            continue;
+        }
+
+        if (S_ISDIR(statbuf.st_mode)) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            traverse_directory(path, file_sizes, file_count, bin_width);
+        } else if (S_ISREG(statbuf.st_mode)) {
+            file_sizes[(*file_count)++] = statbuf.st_size;
+        }
+    }
+
+    closedir(dir);
+}
+
+void print_histogram(int *file_sizes, int file_count, int bin_width) {
+    if (file_count == 0) {
+        printf("No files found.\n");
+        return;
+    }
+
+    int max_size = 0;
+    for (int i = 0; i < file_count; i++) {
+        if (file_sizes[i] > max_size) {
+            max_size = file_sizes[i];
+        }
+    }
+
+    int num_bins = (max_size / bin_width) + 1;
+    int *bins = calloc(num_bins, sizeof(int));
+
+    for (int i = 0; i < file_count; i++) {
+        int bin_index = file_sizes[i] / bin_width;
+        bins[bin_index]++;
+    }
+
+    printf("File Size Histogram (Bin Width: %d):\n", bin_width);
+    for (int i = 0; i < num_bins; i++) {
+        printf("%6d - %6d: %d\n", i * bin_width, (i + 1) * bin_width - 1, bins[i]);
+    }
+
+    free(bins);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <directory> <bin_width>\n", argv[0]);
+        return 1;
+    }
+
+    const char *dir_path = argv[1];
+    int bin_width = atoi(argv[2]);
+
+    if (bin_width <= 0) {
+        fprintf(stderr, "Bin width must be a positive integer.\n");
+        return 1;
+    }
+
+    printf("Using directory: %s\n", dir_path);
+
+    int file_sizes[10000];
+    int file_count = 0;
+
+    traverse_directory(dir_path, file_sizes, &file_count, bin_width);
+    print_histogram(file_sizes, file_count, bin_width);
+
+    return 0;
+}
