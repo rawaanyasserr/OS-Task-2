@@ -1,0 +1,112 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#define N 5
+#define NUM_REFERENCES 100
+#define NUM_FRAMES 3
+#define NUM_PROCESSES 2
+
+void generate_page_reference_string(int *reference_string, int length, double *probabilities) {
+    srand(time(NULL));
+    int current_state = rand() % N;
+
+    for (int i = 0; i < length; i++) {
+        reference_string[i] = current_state;
+
+        double random_value = (double)rand() / RAND_MAX;
+        if (random_value < probabilities[current_state]) {
+            continue;
+        } else {
+            int next_state;
+            do {
+                next_state = rand() % N;
+            } while (next_state == current_state);
+            current_state = next_state;
+        }
+    }
+}
+
+int simulate_fifo(int *reference_string, int length, int num_frames) {
+    int *frames = malloc(num_frames * sizeof(int));
+    for (int i = 0; i < num_frames; i++) {
+        frames[i] = -1;
+    }
+
+    int page_faults = 0;
+    int next_frame_to_replace = 0;
+
+    for (int i = 0; i < length; i++) {
+        int page = reference_string[i];
+        int page_found = 0;
+
+        for (int j = 0; j < num_frames; j++) {
+            if (frames[j] == page) {
+                page_found = 1;
+                break;
+            }
+        }
+
+        if (!page_found) {
+            frames[next_frame_to_replace] = page;
+            next_frame_to_replace = (next_frame_to_replace + 1) % num_frames;
+            page_faults++;
+        }
+    }
+
+    free(frames);
+    return page_faults;
+}
+
+int simulate_local(int *reference_string, int length, int num_frames, int num_processes) {
+    int page_faults = 0;
+    int frames_per_process = num_frames / num_processes;
+
+    for (int p = 0; p < num_processes; p++) {
+        int *local_reference_string = malloc(length * sizeof(int));
+        int local_length = 0;
+
+        for (int i = 0; i < length; i++) {
+            if (reference_string[i] >= p * (N / num_processes) && reference_string[i] < (p + 1) * (N / num_processes)) {
+                local_reference_string[local_length++] = reference_string[i];
+            }
+        }
+
+        page_faults += simulate_fifo(local_reference_string, local_length, frames_per_process);
+        free(local_reference_string);
+    }
+
+    return page_faults;
+}
+
+int simulate_global(int *reference_string, int length, int num_frames) {
+    return simulate_fifo(reference_string, length, num_frames);
+}
+
+int main() {
+    double probabilities[N] = {0.5, 0.3, 0.7, 0.4, 0.6};
+
+    int reference_string[NUM_REFERENCES];
+    generate_page_reference_string(reference_string, NUM_REFERENCES, probabilities);
+
+    FILE *output_file = fopen("reference_string.txt", "w");
+    if (!output_file) {
+        perror("Error opening output file");
+        return 1;
+    }
+
+    for (int i = 0; i < NUM_REFERENCES; i++) {
+        fprintf(output_file, "%d\n", reference_string[i]);
+    }
+
+    fclose(output_file);
+    printf("Page reference string saved to 'reference_string.txt'.\n");
+
+    int local_page_faults = simulate_local(reference_string, NUM_REFERENCES, NUM_FRAMES, NUM_PROCESSES);
+    int global_page_faults = simulate_global(reference_string, NUM_REFERENCES, NUM_FRAMES);
+
+    printf("Local page replacement policy: %d page faults\n", local_page_faults);
+    printf("Global page replacement policy: %d page faults\n", global_page_faults);
+
+    return 0;
+}
